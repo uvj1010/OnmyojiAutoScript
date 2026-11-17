@@ -247,6 +247,21 @@ class ScriptTask(RightActivity, Battle, GeneralBattle, SwitchSoul, Star56):
             self.screenshot()
             if self.appear(self.I_BATTLE_DEMON) and not self.appear(self.I_BOSS_EMPTY):
                 break
+            # 召唤后游戏可能已经打完并停在结算页，先点掉结算，避免长时间无点击被判卡死
+            if self.appear(self.I_MD_WIN):
+                logger.info('Battle result appeared after summon, close it')
+                self.ui_click_until_disappear(self.I_MD_WIN, interval=1)
+                continue
+            if self.appear(self.I_MD_BATTLE_FAILURE):
+                logger.info('Battle failure appeared after summon, close it')
+                self.ui_click_until_disappear(self.I_MD_BATTLE_FAILURE, interval=1)
+                continue
+            # 召唤后游戏可能直接进入战斗准备/战斗中，交给通用战斗流程接管
+            if self.appear(self.I_PREPARE_HIGHLIGHT) or self.appear(self.I_PREPARE_DARK) \
+                    or self.appear(self.I_BATTLE_INFO):
+                logger.info('Demon battle started after summon, fight it')
+                self.battle_boss(entered=True)
+                continue
             if self.appear_then_click(self.I_FIND_DEMON, interval=3.5):
                 continue
         self.screenshot()
@@ -262,7 +277,7 @@ class ScriptTask(RightActivity, Battle, GeneralBattle, SwitchSoul, Star56):
             self.config.notifier.push(content=f'召唤到高星鬼王: {detect_full_name}', title='超鬼王')
         return True
 
-    def battle_boss(self, group: int = None, team: int = None) -> bool:
+    def battle_boss(self, group: int = None, team: int = None, entered: bool = False) -> bool:
         """
         战斗流程不再自己写 while 循环，全部交给 battle_wait 的策略化钩子：
           prepare/preset  准备阶段与预设队伍（5/6 星按推荐阵容切队）
@@ -270,11 +285,13 @@ class ScriptTask(RightActivity, Battle, GeneralBattle, SwitchSoul, Star56):
           idle            战斗中给鬼王上标记
         @param group: 预设组，与 team 同时为 None 时不切预设队伍
         @param team:  预设队伍，与 group 同时为 None 时不切预设队伍
+        @param entered: 已经处于战斗准备/战斗中（召唤后游戏自动开战），跳过点战斗按钮进战斗的步骤
         @return: True 战斗胜利，False 战斗失败
         """
         logger.info('Battle boss')
-        self.ui_click(self.I_TEAM_LOCK, self.I_TEAM_UNLOCK, interval=1.5, timeout=5)
-        self.ui_click_until_disappear(self.I_BATTLE_DEMON, interval=1.8)
+        if not entered:
+            self.ui_click(self.I_TEAM_LOCK, self.I_TEAM_UNLOCK, interval=1.5, timeout=5)
+            self.ui_click_until_disappear(self.I_BATTLE_DEMON, interval=1.8)
         # 任务级战斗计数：本场是第几场（和旧日志 Current count 对齐）
         count = runtime.pub_ctx.per_task.count if runtime.pub_ctx else 0
         logger.info(f'Current count: {count + 1}')
